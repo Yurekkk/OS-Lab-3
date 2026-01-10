@@ -1,0 +1,8 @@
+[
+{
+  "directory": "D:/OS/Lab-3/build",
+  "command": "C:\\PROGRA~1\\MINGW-~1\\X86_64~1.0-P\\mingw64\\bin\\gcc.exe   -g -o CMakeFiles\\main.dir\\counter.c.obj -c D:\\OS\\Lab-3\\counter.c",
+  "file": "D:/OS/Lab-3/counter.c",
+  "output": "CMakeFiles/main.dir/counter.c.obj"
+}
+]
