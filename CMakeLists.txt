@@ -5,4 +5,5 @@ project(main)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_executable(main counter.c)
+add_executable(counter counter.c)
+add_executable(counter_daughter counter_daughter.c)

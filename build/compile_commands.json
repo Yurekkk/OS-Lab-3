@@ -1,8 +1,14 @@
 [
 {
   "directory": "D:/OS/Lab-3/build",
-  "command": "C:\\PROGRA~1\\MINGW-~1\\X86_64~1.0-P\\mingw64\\bin\\gcc.exe   -g -o CMakeFiles\\main.dir\\counter.c.obj -c D:\\OS\\Lab-3\\counter.c",
+  "command": "C:\\PROGRA~1\\MINGW-~1\\X86_64~1.0-P\\mingw64\\bin\\gcc.exe   -g -o CMakeFiles\\counter.dir\\counter.c.obj -c D:\\OS\\Lab-3\\counter.c",
   "file": "D:/OS/Lab-3/counter.c",
-  "output": "CMakeFiles/main.dir/counter.c.obj"
+  "output": "CMakeFiles/counter.dir/counter.c.obj"
+},
+{
+  "directory": "D:/OS/Lab-3/build",
+  "command": "C:\\PROGRA~1\\MINGW-~1\\X86_64~1.0-P\\mingw64\\bin\\gcc.exe   -g -o CMakeFiles\\counter_daughter.dir\\counter_daughter.c.obj -c D:\\OS\\Lab-3\\counter_daughter.c",
+  "file": "D:/OS/Lab-3/counter_daughter.c",
+  "output": "CMakeFiles/counter_daughter.dir/counter_daughter.c.obj"
 }
 ]

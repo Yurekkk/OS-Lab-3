@@ -116,24 +116,37 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named main
+# Target rules for targets named counter
 
 # Build rule for target.
-main: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles\Makefile2 main
-.PHONY : main
+counter: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\Makefile2 counter
+.PHONY : counter
 
 # fast build rule for target.
-main/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles\main.dir\build.make CMakeFiles/main.dir/build
-.PHONY : main/fast
+counter/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\counter.dir\build.make CMakeFiles/counter.dir/build
+.PHONY : counter/fast
+
+#=============================================================================
+# Target rules for targets named counter_daughter
+
+# Build rule for target.
+counter_daughter: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\Makefile2 counter_daughter
+.PHONY : counter_daughter
+
+# fast build rule for target.
+counter_daughter/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\counter_daughter.dir\build.make CMakeFiles/counter_daughter.dir/build
+.PHONY : counter_daughter/fast
 
 counter.obj: counter.c.obj
 .PHONY : counter.obj
 
 # target to build an object file
 counter.c.obj:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles\main.dir\build.make CMakeFiles/main.dir/counter.c.obj
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\counter.dir\build.make CMakeFiles/counter.dir/counter.c.obj
 .PHONY : counter.c.obj
 
 counter.i: counter.c.i
@@ -141,7 +154,7 @@ counter.i: counter.c.i
 
 # target to preprocess a source file
 counter.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles\main.dir\build.make CMakeFiles/main.dir/counter.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\counter.dir\build.make CMakeFiles/counter.dir/counter.c.i
 .PHONY : counter.c.i
 
 counter.s: counter.c.s
@@ -149,8 +162,32 @@ counter.s: counter.c.s
 
 # target to generate assembly for a file
 counter.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles\main.dir\build.make CMakeFiles/main.dir/counter.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\counter.dir\build.make CMakeFiles/counter.dir/counter.c.s
 .PHONY : counter.c.s
+
+counter_daughter.obj: counter_daughter.c.obj
+.PHONY : counter_daughter.obj
+
+# target to build an object file
+counter_daughter.c.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\counter_daughter.dir\build.make CMakeFiles/counter_daughter.dir/counter_daughter.c.obj
+.PHONY : counter_daughter.c.obj
+
+counter_daughter.i: counter_daughter.c.i
+.PHONY : counter_daughter.i
+
+# target to preprocess a source file
+counter_daughter.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\counter_daughter.dir\build.make CMakeFiles/counter_daughter.dir/counter_daughter.c.i
+.PHONY : counter_daughter.c.i
+
+counter_daughter.s: counter_daughter.c.s
+.PHONY : counter_daughter.s
+
+# target to generate assembly for a file
+counter_daughter.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\counter_daughter.dir\build.make CMakeFiles/counter_daughter.dir/counter_daughter.c.s
+.PHONY : counter_daughter.c.s
 
 # Help Target
 help:
@@ -160,10 +197,14 @@ help:
 	@echo ... depend
 	@echo ... edit_cache
 	@echo ... rebuild_cache
-	@echo ... main
+	@echo ... counter
+	@echo ... counter_daughter
 	@echo ... counter.obj
 	@echo ... counter.i
 	@echo ... counter.s
+	@echo ... counter_daughter.obj
+	@echo ... counter_daughter.i
+	@echo ... counter_daughter.s
 .PHONY : help
 
 
