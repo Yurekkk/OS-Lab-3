@@ -8,16 +8,22 @@
 лог текущее значение счетчика и порождать копии"
 - Реализовано через leader_pid в SharedData
 
-Data race устраняется с помощью mutex
+Data race в windows устраняется с помощью mutex;
+в linux для файла устраняется с помощью flock, 
+для shared data - с помощью семафоров.
 Atomic не обязательно работает межпроцессно
 
 Закрытие процесса после нажатия на enter в терминале
 происходит с помощью volatile BOOL флажка
 */
 
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L // для CLOCK_MONOTONIC
+#endif
+
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 #include <stdatomic.h>
 
 #ifdef _WIN32
@@ -26,6 +32,8 @@ Atomic не обязательно работает межпроцессно
 #else // POSIX
     #include <unistd.h>
     #include <sys/types.h>
+    #include <sys/file.h>
+    #include <pthread.h>
 #endif
 
 #ifdef _WIN32
@@ -34,6 +42,10 @@ Atomic не обязательно работает межпроцессно
 #else // POSIX
     #define get_current_pid()   getpid()
     #define sleep_ms(ms)        usleep(ms * 1000)
+    typedef void* HANDLE;
+    typedef int BOOL;
+    #define TRUE 1
+    #define FALSE 0
 #endif
 
 #define LOG_FILE "counter.log"
@@ -76,9 +88,10 @@ void close_process_handle(app_info* app_info);
 BOOL process_is_completed(app_info* app_info);
 BOOL process_is_alive(long pid);
 void await_app(app_info* app_info);
+void launch_daughter_thread(void* (*func)(void*));
 
 void main_counter_function();
-DWORD WINAPI terminal_thread(LPVOID arg);
+void* terminal_func(void* arg);
 void copy1_function();
 void copy2_function();
 
@@ -107,7 +120,7 @@ char* get_time_str() {
     // Потокобезопасное получение структуры даты и времени
 #ifdef _WIN32
     localtime_s(&tm_info, &now);
-#else
+#else // POSIX
     localtime_r(&now, &tm_info);
 #endif
 
@@ -117,27 +130,51 @@ char* get_time_str() {
 }
 
 void log_msg(char* msg) {
-    HANDLE hMutex = CreateMutex(
-        NULL,           // атрибуты безопасности (по умолчанию)
-        FALSE,          // вызывающий поток не получает права владения мьютексом изначально
-        "LogMutex"      // имя объекта мьютекса
-    );
-
-    WaitForSingleObject(hMutex, INFINITE);  // ждем, пока мьютекс освободится
-    
     FILE* f = fopen(LOG_FILE, "a");
     if (!f) {
         perror("Couldn't open the file!");
         return;
     }
 
+#ifdef _WIN32
+    HANDLE hMutex = CreateMutex(
+        NULL,           // атрибуты безопасности (по умолчанию)
+        FALSE,          // вызывающий поток не получает права владения мьютексом изначально
+        "LogMutex"      // имя объекта мьютекса
+    );
+    if (!hMutex) {
+        perror("Mutex failed!");
+        fclose(f);
+        return;
+    }
+
+    DWORD waitResult = WaitForSingleObject(hMutex, INFINITE);  // ждем, пока мьютекс освободится
+    if (waitResult != WAIT_OBJECT_0) {
+        // Ошибка ожидания
+        CloseHandle(hMutex);
+        fclose(f);
+        return;
+    }
+#else // POSIX
+    if (flock(fileno(f), LOCK_EX) != 0) {
+        perror("flock failed!");
+        fclose(f);
+        return;
+    }
+#endif
+
     char* time_str = get_time_str();
     fprintf(f, "[%s] (PID: %lu)\tMSG: %s\n", time_str, (unsigned long) get_current_pid(), msg);
     free(time_str);
-    fclose(f);
-    
+
+#ifdef _WIN32
     ReleaseMutex(hMutex);   // отпускаем мьютекс
     CloseHandle(hMutex);
+#else // POSIX
+    flock(fileno(f), LOCK_UN);
+#endif
+
+    fclose(f);
 }
 
 void log_counter_val() {
@@ -174,6 +211,8 @@ char* trimspaces(char *str) {
 
 
 SharedData* get_data_ptr() {
+#ifdef _WIN32
+
     // Создает или открывает (если уже есть) общий объект для всех процессов
     SharedData_hMap = CreateFileMapping(
         INVALID_HANDLE_VALUE,   // не привязан к файлу на диске
@@ -193,6 +232,10 @@ SharedData* get_data_ptr() {
     );
 
     return data;
+
+#else // POSIX
+
+#endif
 }
 
 HANDLE lockDataMutex() {
@@ -262,7 +305,9 @@ app_info* launch_daughter_process(int argc) {
 
     if (pid == 0) {
         // Дочерний процесс
-        char* const argv[] = {"counter_daughter", argc_char};
+        char arg_str[16];
+        snprintf(arg_str, sizeof(arg_str), "%d", argc);
+        char* const argv[] = {"counter_daughter", arg_str, NULL};
         execv("counter_daughter", argv);
 
         // Если execv успешен — дочерний 
@@ -338,13 +383,28 @@ void await_app(app_info* app_info) {
 #endif
 }
 
+void launch_daughter_thread(void* (*func)(void*)) {
+#ifdef _WIN32
+    CreateThread(NULL, 0, func, NULL, 0, NULL);
+#else // POSIX
+    pthread_t thread;
+    int thread_id = 42;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&thread, &attr, func, &thread_id) != 0) {
+        perror("pthread_create failed");
+    }
+#endif
+}
+
 
 
 void main_counter_function() {
     char start_msg[] = "Main process launched.";
     log_msg(start_msg);
 
-    CreateThread(NULL, 0, terminal_thread, NULL, 0, NULL);
+    launch_daughter_thread(terminal_func);
 
     data = get_data_ptr();
 
@@ -442,7 +502,7 @@ void main_counter_function() {
     log_msg(exit_msg);
 }
 
-DWORD WINAPI terminal_thread(LPVOID arg) {
+void* terminal_func(void* arg) {
     // Отдельный поток ждет ввода в командную строку и 
     // изменяет значение счетчика при вводе
 

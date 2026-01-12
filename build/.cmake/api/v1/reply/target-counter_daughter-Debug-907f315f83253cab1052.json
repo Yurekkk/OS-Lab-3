@@ -2,10 +2,7 @@
 	"artifacts" : 
 	[
 		{
-			"path" : "counter_daughter.exe"
-		},
-		{
-			"path" : "counter_daughter.pdb"
+			"path" : "counter_daughter"
 		}
 	],
 	"backtrace" : 1,
@@ -32,18 +29,13 @@
 			}
 		]
 	},
-	"codemodelVersion" : 
-	{
-		"major" : 2,
-		"minor" : 9
-	},
 	"compileGroups" : 
 	[
 		{
 			"compileCommandFragments" : 
 			[
 				{
-					"fragment" : "-g"
+					"fragment" : "-g  "
 				}
 			],
 			"language" : "C",
@@ -63,14 +55,14 @@
 				"role" : "flags"
 			},
 			{
-				"fragment" : "-lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32",
-				"role" : "libraries"
+				"fragment" : "",
+				"role" : "flags"
 			}
 		],
 		"language" : "C"
 	},
 	"name" : "counter_daughter",
-	"nameOnDisk" : "counter_daughter.exe",
+	"nameOnDisk" : "counter_daughter",
 	"paths" : 
 	{
 		"build" : ".",

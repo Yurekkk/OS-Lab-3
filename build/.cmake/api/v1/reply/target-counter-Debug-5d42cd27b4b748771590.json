@@ -2,10 +2,7 @@
 	"artifacts" : 
 	[
 		{
-			"path" : "counter.exe"
-		},
-		{
-			"path" : "counter.pdb"
+			"path" : "counter"
 		}
 	],
 	"backtrace" : 1,
@@ -32,18 +29,13 @@
 			}
 		]
 	},
-	"codemodelVersion" : 
-	{
-		"major" : 2,
-		"minor" : 9
-	},
 	"compileGroups" : 
 	[
 		{
 			"compileCommandFragments" : 
 			[
 				{
-					"fragment" : "-g"
+					"fragment" : "-g  "
 				}
 			],
 			"language" : "C",
@@ -63,14 +55,14 @@
 				"role" : "flags"
 			},
 			{
-				"fragment" : "-lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32",
-				"role" : "libraries"
+				"fragment" : "",
+				"role" : "flags"
 			}
 		],
 		"language" : "C"
 	},
 	"name" : "counter",
-	"nameOnDisk" : "counter.exe",
+	"nameOnDisk" : "counter",
 	"paths" : 
 	{
 		"build" : ".",

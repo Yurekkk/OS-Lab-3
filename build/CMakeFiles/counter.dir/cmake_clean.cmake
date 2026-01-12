@@ -1,10 +1,7 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/counter.dir/counter.c.obj"
-  "CMakeFiles/counter.dir/counter.c.obj.d"
-  "counter.exe"
-  "counter.exe.manifest"
+  "CMakeFiles/counter.dir/counter.c.o"
+  "counter"
   "counter.pdb"
-  "libcounter.dll.a"
 )
 
 # Per-language clean rules from dependency scanning.

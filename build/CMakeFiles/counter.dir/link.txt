@@ -1,3 +1,1 @@
-"C:\Program Files\CMake\bin\cmake.exe" -E rm -f CMakeFiles\counter.dir/objects.a
-C:\PROGRA~1\MINGW-~1\X86_64~1.0-P\mingw64\bin\ar.exe qc CMakeFiles\counter.dir/objects.a @CMakeFiles\counter.dir\objects1.rsp
-C:\PROGRA~1\MINGW-~1\X86_64~1.0-P\mingw64\bin\gcc.exe -g -Wl,--whole-archive CMakeFiles\counter.dir/objects.a -Wl,--no-whole-archive -o counter.exe -Wl,--out-implib,libcounter.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\counter.dir\linkLibs.rsp
+/usr/bin/gcc -g   CMakeFiles/counter.dir/counter.c.o  -o counter 
