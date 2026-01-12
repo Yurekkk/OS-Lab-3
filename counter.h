@@ -75,7 +75,6 @@ Atomic не обязательно работает межпроцессно
 typedef struct {
     counter_t counter;
     long leader_pid;
-    BOOL initialized;
 } SharedData;
 
 typedef struct {
@@ -108,7 +107,7 @@ void log_counter_val();
 char* trimspaces(char *str);
 
 SharedData* get_data_ptr();
-void initDataMaybe();
+void initData();
 void initSync();
 void lockData();
 void unlockData();
@@ -299,25 +298,11 @@ SharedData* get_data_ptr() {
 #endif
 }
 
-void initDataMaybe() {
-    sem_open("/InitSem", O_CREAT | O_EXCL, 0666, 1);
-    if (errno == EEXIST) {
-        // Инициализирующий семафор уже существует, значит, мы не первые
-        return;
-    }
-
-    // Инициализируем данные
+void initData() {
     lockData();
-    if (!data->initialized) {
-        data->counter = 0;
-        data->leader_pid = get_current_pid();
-        data->initialized = TRUE;
-    } 
+    data->counter = 0;
+    data->leader_pid = get_current_pid();
     unlockData();
-
-    // Обнуляем линки на всякий случай
-    shm_unlink("/SharedData");
-    sem_unlink("/DataSem");
 }
 
 void initSync() {
@@ -581,7 +566,7 @@ void main_counter_function() {
     launch_daughter_thread(terminal_func);
     data = get_data_ptr();
     initSync();
-    initDataMaybe();
+    initData();
 
     app_info* copy_1_info = NULL;
     app_info* copy_2_info = NULL;
