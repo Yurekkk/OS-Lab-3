@@ -1,11 +1,11 @@
 /*
-"Позволяет пользователю через интерфейс командной строки 
-установить любое значение счетчика"
+Задание "Позволяет пользователю через интерфейс командной 
+строки установить любое значение счетчика"
 - Реализовано через отдельный поток, слушающий терминал
 
-"Пользователь может запустить любое количество программ. 
-В этом случае только одна из программ должна писать в 
-лог текущее значение счетчика и порождать копии"
+Задание "Пользователь может запустить любое количество 
+программ. В этом случае только одна из программ должна 
+писать в лог текущее значение счетчика и порождать копии"
 - Реализовано через leader_pid в SharedData
 
 Data race в windows устраняется с помощью mutex;
@@ -18,7 +18,7 @@ Atomic не обязательно работает межпроцессно
 */
 
 #ifndef _WIN32
-#define _POSIX_C_SOURCE 200809L // для CLOCK_MONOTONIC
+#define _POSIX_C_SOURCE 200809L // Гарантирует доступ к sem_open, shm_open и др.
 #endif
 
 #include <time.h>
@@ -59,6 +59,7 @@ Atomic не обязательно работает межпроцессно
 typedef struct {
     counter_t counter;
     long leader_pid;
+    BOOL initialized;
 } SharedData;
 
 typedef struct {
@@ -69,9 +70,20 @@ typedef struct {
 #endif
 } app_info;
 
+
+
 volatile BOOL quit_flag = FALSE;
-HANDLE SharedData_hMap = NULL;
 SharedData* data;
+
+#ifdef _WIN32
+    HANDLE SharedData_hMap = NULL;
+    HANDLE hDataMutex = NULL;
+#else // POSIX
+    int shm_fd = -1;
+    sem_t* shm_sem = NULL;
+#endif
+
+
 
 double get_curr_time();
 char* get_time_str();
@@ -80,8 +92,11 @@ void log_counter_val();
 char* trimspaces(char *str);
 
 SharedData* get_data_ptr();
-HANDLE lockDataMutex();
-void unlockDataMutex(HANDLE hMutex);
+void initDataMaybe();
+void initSync();
+void lockData();
+void unlockData();
+void cleanupDataSync();
 
 app_info* launch_daughter_process(int argc);
 void close_process_handle(app_info* app_info);
@@ -137,21 +152,22 @@ void log_msg(char* msg) {
     }
 
 #ifdef _WIN32
-    HANDLE hMutex = CreateMutex(
+    HANDLE hLogMutex = CreateMutex(
         NULL,           // атрибуты безопасности (по умолчанию)
         FALSE,          // вызывающий поток не получает права владения мьютексом изначально
         "LogMutex"      // имя объекта мьютекса
     );
-    if (!hMutex) {
+    if (!hLogMutex) {
         perror("Mutex failed!");
         fclose(f);
         return;
     }
 
-    DWORD waitResult = WaitForSingleObject(hMutex, INFINITE);  // ждем, пока мьютекс освободится
+    // ждем, пока мьютекс освободится
+    DWORD waitResult = WaitForSingleObject(hLogMutex, INFINITE);
     if (waitResult != WAIT_OBJECT_0) {
         // Ошибка ожидания
-        CloseHandle(hMutex);
+        CloseHandle(hLogMutex);
         fclose(f);
         return;
     }
@@ -168,8 +184,8 @@ void log_msg(char* msg) {
     free(time_str);
 
 #ifdef _WIN32
-    ReleaseMutex(hMutex);   // отпускаем мьютекс
-    CloseHandle(hMutex);
+    ReleaseMutex(hLogMutex);   // отпускаем мьютекс
+    CloseHandle(hLogMutex);
 #else // POSIX
     flock(fileno(f), LOCK_UN);
 #endif
@@ -178,9 +194,9 @@ void log_msg(char* msg) {
 }
 
 void log_counter_val() {
-    HANDLE hMutex = lockDataMutex();
+    lockData();
     counter_t val = data->counter;
-    unlockDataMutex(hMutex);
+    unlockData();
     
     char buffer[100];
     snprintf(buffer, sizeof(buffer), "Counter value is %d.", val);
@@ -223,6 +239,11 @@ SharedData* get_data_ptr() {
         "SharedData"         // имя объекта разделяемой памяти
     );
 
+    if (!SharedData_hMap) {
+        perror("CreateFileMapping failed");
+        return NULL;
+    }
+
     // Сопоставляет представление сопоставления файлов в адресное пространство вызывающего процесса.
     data = (SharedData*) MapViewOfFile(
         SharedData_hMap,
@@ -234,28 +255,135 @@ SharedData* get_data_ptr() {
     return data;
 
 #else // POSIX
+    
+    // Создаём или открываем объект разделяемой памяти
+    shm_fd = shm_open("/SharedData", O_CREAT | O_RDWR, 0666);
+    if (shm_fd == -1) {
+        perror("shm_open failed");
+        return NULL;
+    }
+
+    // Устанавливаем размер
+    if (ftruncate(shm_fd, sizeof(SharedData)) == -1) {
+        perror("ftruncate failed");
+        close(shm_fd);
+        return NULL;
+    }
+
+    // Отображаем в память
+    data = (SharedData*) mmap(NULL, sizeof(SharedData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (data == MAP_FAILED) {
+        perror("mmap failed");
+        close(shm_fd);
+        return NULL;
+    }
+
+    return data;
 
 #endif
 }
 
-HANDLE lockDataMutex() {
+void initDataMaybe() {
+    // Инициализируем данные, если они не инициализированы
+    lockData();
+    if (!data->initialized) {
+        data->counter = 0;
+        data->leader_pid = get_current_pid();
+        data->initialized = TRUE;
+    } 
+    unlockData();
+}
+
+void initSync() {
+#ifdef _WIN32
+
     // Мью́текс (англ. mutex, от mutual exclusion — «взаимное исключение») — 
     // примитив синхронизации, обеспечивающий взаимное исключение исполнения 
     // критических участков кода.
     // Стандарт C не обязывает атомики работать межпроцессно.
 
-    HANDLE hMutex = CreateMutex(
+    hDataMutex = CreateMutex(
         NULL,           // атрибуты безопасности (по умолчанию)
         FALSE,          // вызывающий поток не получает права владения мьютексом изначально
         "DataMutex"     // имя объекта мьютекса
     );
-    WaitForSingleObject(hMutex, INFINITE);  // ждем, пока мьютекс освободится
-    return hMutex;
+    if (!hDataMutex) {
+        perror("CreateMutex failed");
+        return;
+    }
+
+#else // POSIX
+
+    // Создаём или открываем именованный семафор
+    shm_sem = sem_open("/DataSem", O_CREAT, 0666, 1); // начальное значение = 1 (бинарный семафор)
+    if (shm_sem == SEM_FAILED) {
+        perror("sem_open failed");
+        return;
+    }
+
+#endif
 }
 
-void unlockDataMutex(HANDLE hMutex) {
-    ReleaseMutex(hMutex);   // отпускаем мьютекс
-    CloseHandle(hMutex);
+void lockData() {
+#ifdef _WIN32
+
+    // ждем, пока мьютекс освободится
+    DWORD waitResult = WaitForSingleObject(hDataMutex, INFINITE);
+    if (waitResult != WAIT_OBJECT_0) {
+        // Ошибка ожидания
+        CloseHandle(hDataMutex);
+        return;
+    }
+
+#else // POSIX
+
+    // Ждём (захватываем)
+    if (sem_wait(shm_sem) == -1) {
+        perror("sem_wait failed");
+        return;
+    }
+
+#endif
+}
+
+void unlockData() {
+#ifdef _WIN32
+    ReleaseMutex(hDataMutex);   // отпускаем мьютекс
+#else // POSIX
+    if (sem_post(shm_sem) == -1) {
+        perror("sem_post failed");
+    }
+#endif
+}
+
+void cleanupDataSync() {
+#ifdef _WIN32
+    if (hDataMutex) {
+        CloseHandle(hDataMutex);
+        hDataMutex = NULL;
+    }
+    if (data) {
+        UnmapViewOfFile(data);
+        data = NULL;
+    }
+    if (SharedData_hMap) {
+        CloseHandle(SharedData_hMap);
+        SharedData_hMap = NULL;
+    }
+#else
+    if (shm_sem != SEM_FAILED) {
+        sem_close(shm_sem);     // закрываем дескриптор семафора
+        shm_sem = SEM_FAILED;
+    }
+    if (data && data != MAP_FAILED) {
+        munmap(data, sizeof(SharedData));   // отключаем память
+        data = NULL;
+    }
+    if (shm_fd >= 0) {
+        close(shm_fd);  // закрываем файловый дескриптор
+        shm_fd = -1;
+    }
+#endif
 }
 
 
@@ -307,8 +435,8 @@ app_info* launch_daughter_process(int argc) {
         // Дочерний процесс
         char arg_str[16];
         snprintf(arg_str, sizeof(arg_str), "%d", argc);
-        char* const argv[] = {"counter_daughter", arg_str, NULL};
-        execv("counter_daughter", argv);
+        char* const argv[] = {"./counter_daughter", arg_str, NULL};
+        execv("./counter_daughter", argv);
 
         // Если execv успешен — дочерний 
         // процесс больше не выполняет код.
@@ -349,7 +477,7 @@ BOOL process_is_completed(app_info* app_info) {
     pid_t result = waitpid(app_info->pid, &status, WNOHANG);
     if (result == 0) {
         return FALSE;
-    } else if (result == pid) {
+    } else if (result == app_info->pid) {
         return TRUE;
     } else {
         // ошибка
@@ -360,6 +488,7 @@ BOOL process_is_completed(app_info* app_info) {
 }
 
 BOOL process_is_alive(long pid) {
+#ifdef _WIN32
     HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD) pid);
     if (h == NULL) return FALSE;
 
@@ -369,15 +498,28 @@ BOOL process_is_alive(long pid) {
 
     if (!success) return FALSE;
     return (exit_code == STILL_ACTIVE);
+
+#else // POSIX
+
+    // kill(pid, 0) проверяет существование процесса без отправки сигнала
+    if (kill(pid, 0) == 0) {
+        return TRUE;   // процесс существует
+    } else {
+        if (errno == ESRCH) {
+            return FALSE;  // процесс не найден
+        }
+        // EPERM — процесс есть, но нет прав → считаем, что жив
+        return TRUE;
+    }
+
+#endif
 }
 
 void await_app(app_info* app_info) {
 #ifdef _WIN32
-    // Ожидаем завершения процесса
     const unsigned long awaitTime = INFINITE;
     WaitForSingleObject(app_info->hProcess, awaitTime);
 #else // POSIX
-    // Ожидаем завершения процесса
     int status;
     pid_t result = waitpid(app_info->pid, &status, 0);
 #endif
@@ -385,16 +527,22 @@ void await_app(app_info* app_info) {
 
 void launch_daughter_thread(void* (*func)(void*)) {
 #ifdef _WIN32
-    CreateThread(NULL, 0, func, NULL, 0, NULL);
+    HANDLE h = CreateThread(NULL, 0, func, NULL, 0, NULL);
+    if (!h) {
+        perror("CreateThread failed");
+        return;
+    }
+    CloseHandle(h);
 #else // POSIX
+    // Создаем detached поток
     pthread_t thread;
-    int thread_id = 42;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    if (pthread_create(&thread, &attr, func, &thread_id) != 0) {
+    if (pthread_create(&thread, &attr, func, NULL) != 0) {
         perror("pthread_create failed");
     }
+    pthread_attr_destroy(&attr);
 #endif
 }
 
@@ -405,17 +553,9 @@ void main_counter_function() {
     log_msg(start_msg);
 
     launch_daughter_thread(terminal_func);
-
     data = get_data_ptr();
-
-    // Проверяем, создан ли новый объект
-    if (GetLastError() != ERROR_ALREADY_EXISTS) {
-        // Если да, то инициализируем данные
-        HANDLE hMutex = lockDataMutex();
-        data->counter = 0;
-        data->leader_pid = get_current_pid();
-        unlockDataMutex(hMutex);
-    } 
+    initDataMaybe();
+    initSync();
 
     app_info* copy_1_info;
     app_info* copy_2_info;
@@ -431,11 +571,11 @@ void main_counter_function() {
     // Основной цикл
     while (!quit_flag) {
         // Каждый раз пытаемся стать новым лидером, если старый умер
-        HANDLE hMutex = lockDataMutex();
+        lockData();
         if (data->leader_pid == -1 || !process_is_alive(data->leader_pid))
             data->leader_pid = current_pid;
         BOOL is_leader = (current_pid == data->leader_pid);
-        unlockDataMutex(hMutex);
+        unlockData();
 
         now = get_curr_time();
 
@@ -444,9 +584,9 @@ void main_counter_function() {
             now = get_curr_time();
             prev_incr_time = now;
 
-            HANDLE hMutex = lockDataMutex();
+            lockData();
             data->counter++;
-            unlockDataMutex(hMutex);
+            unlockData();
         }
 
         if (now - prev_log_counter_time >= LOG_COUNTER_DELAY) {
@@ -486,27 +626,25 @@ void main_counter_function() {
         }
     }
 
-    HANDLE hMutex = lockDataMutex();
+    lockData();
     data->leader_pid = -1;
-    unlockDataMutex(hMutex);
+    unlockData();
 
     await_app(copy_1_info);
     await_app(copy_2_info);
     close_process_handle(copy_1_info);
     close_process_handle(copy_2_info);
 
-    UnmapViewOfFile(data);
-    CloseHandle(SharedData_hMap);
-
     char exit_msg[] = "Main process completed.";
     log_msg(exit_msg);
+
+    cleanupDataSync();
 }
 
 void* terminal_func(void* arg) {
     // Отдельный поток ждет ввода в командную строку и 
     // изменяет значение счетчика при вводе
 
-    data = get_data_ptr();
     char buffer[64];
     char *ptr;
     printf("Enter a number to change the value of the counter\n"\
@@ -546,9 +684,9 @@ void* terminal_func(void* arg) {
         }
         else {
             counter_t num = strtoull(trimmed, &ptr, 10);
-            HANDLE hMutex = lockDataMutex();
+            lockData();
             data->counter = num;
-            unlockDataMutex(hMutex);
+            unlockData();
             printf("Value is set.\n");
         }
     }
@@ -559,13 +697,17 @@ void copy1_function() {
     log_msg(start_msg);
 
     data = get_data_ptr();
-    HANDLE hMutex = lockDataMutex();
+    initSync();
+
+    lockData();
     data->counter += 10;
-    unlockDataMutex(hMutex);
+    unlockData();
     // log_counter_val();
 
     char exit_msg[] = "Copy 1 process completed.";
     log_msg(exit_msg);
+
+    cleanupDataSync();
 }
 
 void copy2_function() {
@@ -573,19 +715,23 @@ void copy2_function() {
     log_msg(start_msg);
 
     data = get_data_ptr();
-    HANDLE hMutex = lockDataMutex();
+    initSync();
+
+    lockData();
     data->counter *= 2;
-    unlockDataMutex(hMutex);
+    unlockData();
     // log_counter_val();
 
     sleep_ms(COPY2_DELAY);
 
-    hMutex = lockDataMutex();
+    lockData();
     data->counter /= 2;
-    unlockDataMutex(hMutex);
+    unlockData();
     // log_counter_val();
 
     char exit_msg[] = "Copy 2 process completed.";
     log_msg(exit_msg);
+
+    cleanupDataSync();
 }
 
