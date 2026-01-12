@@ -610,8 +610,6 @@ void main_counter_function() {
             // Инкрементировать счетчик
             now = get_curr_time();
             prev_incr_time = now;
-            printf("%d", process_is_alive(current_pid));
-
             lockData();
             data->counter++;
             unlockData();
