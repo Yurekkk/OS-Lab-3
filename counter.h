@@ -17,14 +17,17 @@ Atomic не обязательно работает межпроцессно
 происходит с помощью volatile BOOL флажка
 */
 
+
+
 #ifndef _WIN32
-#define _POSIX_C_SOURCE 200809L // Гарантирует доступ к sem_open, shm_open и др.
+#define _POSIX_C_SOURCE 200809L // Гарантирует доступ к sem_open, shm_open и прочему
 #endif
 
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdatomic.h>
+#include <string.h>
 
 #ifdef _WIN32
     #include <windows.h>
@@ -33,21 +36,35 @@ Atomic не обязательно работает межпроцессно
     #include <unistd.h>
     #include <sys/types.h>
     #include <sys/file.h>
+    #include <sys/wait.h> 
+    #include <sys/mman.h>
     #include <pthread.h>
+    #include <semaphore.h>
+    #include <errno.h> 
+    #include <ctype.h> 
+    #include <signal.h> 
 #endif
+
+
 
 #ifdef _WIN32
     #define get_current_pid()   GetCurrentProcessId()
     #define sleep_ms(ms)        Sleep(ms)
 #else // POSIX
     #define get_current_pid()   getpid()
-    #define sleep_ms(ms)        usleep(ms * 1000)
     typedef void* HANDLE;
     typedef int BOOL;
     #define TRUE 1
     #define FALSE 0
+    static inline void sleep_ms(unsigned long ms) {
+        struct timespec ts;
+        ts.tv_sec = ms / 1000;
+        ts.tv_nsec = (ms % 1000) * 1000000;
+        nanosleep(&ts, NULL);
+    }
 #endif
 
+#define SHARED_DATA_MAGIC_NUMBER 2465502718961455901
 #define LOG_FILE "counter.log"
 #define TIME_STR_SIZE 32
 #define INCREMENT_DELAY 300         // in ms
@@ -59,7 +76,13 @@ Atomic не обязательно работает межпроцессно
 typedef struct {
     counter_t counter;
     long leader_pid;
-    BOOL initialized;
+    // Черт знает, как проверять на линуксе, инициализирована ли структура
+    // или нет и является ли процесс первым запущенным или нет
+    // Обычный флажок не пойдет, потому что там может быть мусорное TRUE
+    // Поэтому структуру считаем инициализированной тогда, когда магическое
+    // число совпадает с заданным (вероятность случайного совпадения
+    // мусорного значения и заданного = 1/2^64)
+    unsigned long long magic_number;
 } SharedData;
 
 typedef struct {
@@ -199,7 +222,7 @@ void log_counter_val() {
     unlockData();
     
     char buffer[100];
-    snprintf(buffer, sizeof(buffer), "Counter value is %d.", val);
+    snprintf(buffer, sizeof(buffer), "Counter value is %llu.", val);
     log_msg(buffer);
 }
 
@@ -286,10 +309,10 @@ SharedData* get_data_ptr() {
 void initDataMaybe() {
     // Инициализируем данные, если они не инициализированы
     lockData();
-    if (!data->initialized) {
+    if (data->magic_number != SHARED_DATA_MAGIC_NUMBER) {
         data->counter = 0;
         data->leader_pid = get_current_pid();
-        data->initialized = TRUE;
+        data->magic_number = SHARED_DATA_MAGIC_NUMBER;
     } 
     unlockData();
 }
@@ -315,7 +338,7 @@ void initSync() {
 #else // POSIX
 
     // Создаём или открываем именованный семафор
-    shm_sem = sem_open("/DataSem", O_CREAT, 0666, 1); // начальное значение = 1 (бинарный семафор)
+    shm_sem = sem_open("/DataSem", O_CREAT, 0666, 1);
     if (shm_sem == SEM_FAILED) {
         perror("sem_open failed");
         return;
@@ -554,8 +577,8 @@ void main_counter_function() {
 
     launch_daughter_thread(terminal_func);
     data = get_data_ptr();
-    initDataMaybe();
     initSync();
+    initDataMaybe();
 
     app_info* copy_1_info;
     app_info* copy_2_info;
@@ -639,6 +662,8 @@ void main_counter_function() {
     log_msg(exit_msg);
 
     cleanupDataSync();
+
+    printf("Process terminated.\n");
 }
 
 void* terminal_func(void* arg) {
@@ -663,15 +688,14 @@ void* terminal_func(void* arg) {
 
         if (trimmed[0] == '\0') {
             // Если строка была пустой
+            printf("Terminating process...\n");
             quit_flag = TRUE;
             break;
         }
 
         // Проверяем, состоит ли строка только из цифр
         BOOL is_only_digits = TRUE;
-        int i = 0;
-        if (trimmed[0] == '-') i++;
-        for (; trimmed[i] != '\0'; i++) {
+        for (int i = 0; trimmed[i] != '\0'; i++) {
             if (!isdigit((unsigned char)trimmed[i])) {
                 is_only_digits = FALSE;
                 break;
