@@ -64,7 +64,6 @@ Atomic не обязательно работает межпроцессно
     }
 #endif
 
-#define SHARED_DATA_MAGIC_NUMBER 2465502718961455901
 #define LOG_FILE "counter.log"
 #define TIME_STR_SIZE 32
 #define INCREMENT_DELAY 300         // in ms
@@ -76,13 +75,7 @@ Atomic не обязательно работает межпроцессно
 typedef struct {
     counter_t counter;
     long leader_pid;
-    // Черт знает, как проверять на линуксе, инициализирована ли структура
-    // или нет и является ли процесс первым запущенным или нет
-    // Обычный флажок не пойдет, потому что там может быть мусорное TRUE
-    // Поэтому структуру считаем инициализированной тогда, когда магическое
-    // число совпадает с заданным (вероятность случайного совпадения
-    // мусорного значения и заданного = 1/2^64)
-    unsigned long long magic_number;
+    BOOL initialized;
 } SharedData;
 
 typedef struct {
@@ -307,14 +300,24 @@ SharedData* get_data_ptr() {
 }
 
 void initDataMaybe() {
-    // Инициализируем данные, если они не инициализированы
+    sem_open("/InitSem", O_CREAT | O_EXCL, 0666, 1);
+    if (errno == EEXIST) {
+        // Инициализирующий семафор уже существует, значит, мы не первые
+        return;
+    }
+
+    // Инициализируем данные
     lockData();
-    if (data->magic_number != SHARED_DATA_MAGIC_NUMBER) {
+    if (!data->initialized) {
         data->counter = 0;
         data->leader_pid = get_current_pid();
-        data->magic_number = SHARED_DATA_MAGIC_NUMBER;
+        data->initialized = TRUE;
     } 
     unlockData();
+
+    // Обнуляем линки на всякий случай
+    shm_unlink("/SharedData");
+    sem_unlink("/DataSem");
 }
 
 void initSync() {
@@ -580,8 +583,8 @@ void main_counter_function() {
     initSync();
     initDataMaybe();
 
-    app_info* copy_1_info;
-    app_info* copy_2_info;
+    app_info* copy_1_info = NULL;
+    app_info* copy_2_info = NULL;
     BOOL copies_previously_launched = FALSE;
     long current_pid = get_current_pid();
 
@@ -593,6 +596,7 @@ void main_counter_function() {
 
     // Основной цикл
     while (!quit_flag) {
+
         // Каждый раз пытаемся стать новым лидером, если старый умер
         lockData();
         if (data->leader_pid == -1 || !process_is_alive(data->leader_pid))
@@ -606,6 +610,7 @@ void main_counter_function() {
             // Инкрементировать счетчик
             now = get_curr_time();
             prev_incr_time = now;
+            printf("%d", process_is_alive(current_pid));
 
             lockData();
             data->counter++;
@@ -653,10 +658,12 @@ void main_counter_function() {
     data->leader_pid = -1;
     unlockData();
 
-    await_app(copy_1_info);
-    await_app(copy_2_info);
-    close_process_handle(copy_1_info);
-    close_process_handle(copy_2_info);
+    if (copy_1_info || copy_2_info) {
+        await_app(copy_1_info);
+        await_app(copy_2_info);
+        close_process_handle(copy_1_info);
+        close_process_handle(copy_2_info);
+    }
 
     char exit_msg[] = "Main process completed.";
     log_msg(exit_msg);
