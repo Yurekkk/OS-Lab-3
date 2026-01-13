@@ -7,7 +7,7 @@
 			[
 				{
 					"build" : ".",
-					"jsonFile" : "directory-.-Debug-f6f22219c74102c3da70.json",
+					"jsonFile" : "directory-.-f6f22219c74102c3da70.json",
 					"minimumCMakeVersion" : 
 					{
 						"string" : "3.10"
@@ -21,7 +21,7 @@
 					]
 				}
 			],
-			"name" : "Debug",
+			"name" : "",
 			"projects" : 
 			[
 				{
@@ -42,14 +42,14 @@
 				{
 					"directoryIndex" : 0,
 					"id" : "counter::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-counter-Debug-f4bb7d5ef2769063e1ad.json",
+					"jsonFile" : "target-counter-8e7ee6ab19565e374351.json",
 					"name" : "counter",
 					"projectIndex" : 0
 				},
 				{
 					"directoryIndex" : 0,
 					"id" : "counter_daughter::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-counter_daughter-Debug-1d0534b50e6a4dd7068a.json",
+					"jsonFile" : "target-counter_daughter-f1916b1e044d1187d375.json",
 					"name" : "counter_daughter",
 					"projectIndex" : 0
 				}
