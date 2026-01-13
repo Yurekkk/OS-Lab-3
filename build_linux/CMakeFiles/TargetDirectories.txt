@@ -1,0 +1,4 @@
+/home/knight5016/OS/OS-Lab-3/build_linux/CMakeFiles/rebuild_cache.dir
+/home/knight5016/OS/OS-Lab-3/build_linux/CMakeFiles/edit_cache.dir
+/home/knight5016/OS/OS-Lab-3/build_linux/CMakeFiles/counter_daughter.dir
+/home/knight5016/OS/OS-Lab-3/build_linux/CMakeFiles/counter.dir
