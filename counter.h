@@ -66,6 +66,7 @@ Atomic не обязательно работает межпроцессно
 
 #define LOG_FILE "counter.log"
 #define TIME_STR_SIZE 32
+#define MAIN_CYCLE_DELAY 20         // in ms
 #define INCREMENT_DELAY 300         // in ms
 #define LOG_COUNTER_DELAY 1000      // in ms
 #define LAUNCH_COPIES_DELAY 3000    // in ms
@@ -635,6 +636,10 @@ void main_counter_function() {
                 }
             }
         }
+
+        // Чтобы не нагружать процессор и не делать постоянно 
+        // сравнения, немного спим каждую итерацию
+        sleep_ms(MAIN_CYCLE_DELAY);
     }
 
     lockData();
